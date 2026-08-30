@@ -1,17 +1,17 @@
 export type InvoiceStatus =
-  | 'Created'
-  | 'Listed'
-  | 'Funded'
-  | 'Active'
-  | 'Confirmed'
-  | 'Repaid'
-  | 'Defaulted';
+  | "Created"
+  | "Listed"
+  | "Funded"
+  | "Active"
+  | "Confirmed"
+  | "Repaid"
+  | "Defaulted";
 
-export type AssetType = 'USDC' | 'XLM';
+export type AssetType = "USDC" | "XLM";
 
 export interface Profile {
   address: string;
-  role: 'issuer' | 'buyer';
+  role: "issuer" | "buyer";
   verified: boolean;
   registeredAt: number; // Unix timestamp (seconds)
 }
@@ -31,7 +31,13 @@ export interface Invoice {
   shippedAt: number | null;
   issuerConfirmed: boolean;
   buyerConfirmed: boolean;
+  buyerConfirmedAt?: number | null;
   repaidAt: number | null;
+  /** Nullable attestation fields from the indexer (set once Underwrite verifies the invoice). */
+  attestationAgentId?: string | null;
+  riskScoreBps?: number | null;
+  evidenceHash?: string | null;
+  attestedAt?: number | null;
 }
 
 export interface PoolStats {
@@ -41,6 +47,7 @@ export interface PoolStats {
   utilizationRateBps: number;
   totalYieldDistributed: bigint;
   activeInvoiceCount: number;
+  totalShares: bigint;
 }
 
 export interface LPPosition {
@@ -48,4 +55,15 @@ export interface LPPosition {
   usdcValue: bigint;
   yieldEarned: bigint;
   depositCount: number;
+}
+
+export interface Agent {
+  /** The agent's on-chain identifier (Symbol). */
+  agentId: string;
+  /** The Stellar public key registered for this agent. */
+  pubkey: string;
+  /** Whether the agent is currently active and authorized to attest. */
+  active: boolean;
+  /** Unix timestamp (seconds) when the agent was registered. */
+  registeredAt: number;
 }
