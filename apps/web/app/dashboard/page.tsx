@@ -7,7 +7,7 @@ import { PageLayout } from "@/components/shared/PageLayout";
 import { InvoiceTable } from "@/components/invoice/InvoiceTable";
 import { InvoiceCard } from "@/components/invoice/InvoiceCard";
 import { ErrorBoundary } from "@/components/shared/ErrorBoundary";
-import { useInvoices } from "@/hooks/useInvoices";
+import { useInvoiceList } from "@/hooks/useInvoices";
 import { useRecentEvents } from "@/hooks/useEvents";
 import { useWalletStore } from "@/store/wallet";
 import { useProfile } from "@/hooks/useProfile";
@@ -35,10 +35,12 @@ const InvoiceForm = dynamic(
 );
 
 export default function SMEDashboard() {
-  const { address, connected, role } = useWalletStore();
+  const address = useWalletStore((s) => s.address);
+  const connected = useWalletStore((s) => s.connected);
+  const role = useWalletStore((s) => s.role);
   const [invoicePage, setInvoicePage] = useState(1);
   const [invoiceLimit, setInvoiceLimit] = useState(20);
-  const { invoices, isLoading, total, totalPages } = useInvoices({
+  const { invoices, isLoading, total, totalPages } = useInvoiceList({
     issuer: address || undefined,
     page: invoicePage,
     limit: invoiceLimit,

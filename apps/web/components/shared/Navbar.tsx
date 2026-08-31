@@ -19,7 +19,9 @@ function isRole(value: string): value is Role {
 
 export function Navbar() {
   const pathname = usePathname();
-  const { role, setRole, connected } = useWalletStore();
+  const role = useWalletStore((s) => s.role);
+  const setRole = useWalletStore((s) => s.setRole);
+  const connected = useWalletStore((s) => s.connected);
   const { balances, loading: balancesLoading } = useBalances();
   const { isVerified } = useProfile();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);

@@ -20,14 +20,14 @@ import {
   UserCheck,
   FileBadge2,
   Building,
-  Mail,
   Fingerprint,
 } from "lucide-react";
 
 const registryContractID = process.env.NEXT_PUBLIC_REGISTRY_CONTRACT_ID || "";
 
 export default function ProfilePage() {
-  const { connected, address } = useWalletStore();
+  const connected = useWalletStore((s) => s.connected);
+  const address = useWalletStore((s) => s.address);
   const {
     profile,
     isProfileLoading,
@@ -47,11 +47,11 @@ export default function ProfilePage() {
   );
 
   const [regRole, setRegRole] = useState<"issuer" | "buyer">("issuer");
-  const [companyName, setCompanyName] = useState("");
+  const [companyName] = useState("");
   const [taxId, setTaxId] = useState("");
   const [country, setCountry] = useState("");
   const [website, setWebsite] = useState("");
-  const [email, setEmail] = useState("");
+  const [email] = useState("");
   const [localError, setLocalError] = useState<string | null>(null);
 
   // Transaction Modal State

@@ -4,7 +4,10 @@ import { describe, expect, it, vi } from "vitest";
 import ProfilePage from "@/app/profile/page";
 
 vi.mock("@/store/wallet", () => ({
-  useWalletStore: () => ({ connected: true, address: "GTESTADDRESS" }),
+  useWalletStore: (selector: any) => {
+    const state = { connected: true, address: "GTESTADDRESS" };
+    return selector ? selector(state) : state;
+  },
 }));
 
 vi.mock("@/hooks/useProfile", () => ({

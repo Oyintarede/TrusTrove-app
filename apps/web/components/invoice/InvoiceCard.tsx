@@ -5,7 +5,7 @@ import { Invoice } from "@/types";
 import { InvoiceStatus } from "./InvoiceStatus";
 import { VerificationBadge } from "./VerificationBadge";
 import type { VerificationState } from "./VerificationBadge";
-import { useInvoices } from "@/hooks/useInvoices";
+import { useInvoiceActions } from "@/hooks/useInvoices";
 import { Button } from "@/components/ui/button";
 import { useWalletStore } from "@/store/wallet";
 import { useProfile } from "@/hooks/useProfile";
@@ -36,7 +36,7 @@ export const InvoiceCard = React.memo(function InvoiceCard({
   onSelect,
   isSelected,
 }: InvoiceCardProps) {
-  const { address } = useWalletStore();
+  const address = useWalletStore((s) => s.address);
   const { isVerified } = useProfile();
   const {
     listInvoice,
@@ -45,7 +45,7 @@ export const InvoiceCard = React.memo(function InvoiceCard({
     confirmDelivery,
     repayInvoice,
     defaultInvoice,
-  } = useInvoices();
+  } = useInvoiceActions();
   const { request: requestConfirmation } = useConfirmDialogStore();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);

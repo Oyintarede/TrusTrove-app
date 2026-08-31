@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useMemo, useState } from "react";
-import { useInvoices } from "@/hooks/useInvoices";
+import { useInvoiceActions } from "@/hooks/useInvoices";
 import { Button } from "@/components/ui/button";
 import { ShieldAlert, PlusCircle } from "lucide-react";
 import type { AssetType } from "@/types";
@@ -44,8 +44,8 @@ async function cancelCreatedInvoice(invoiceId: string) {
 }
 
 export function InvoiceForm({ onSuccess }: InvoiceFormProps) {
-  const { createInvoice, isCreating, listInvoice } = useInvoices();
-  const { address } = useWalletStore();
+  const { createInvoice, isCreating, listInvoice } = useInvoiceActions();
+  const address = useWalletStore((s) => s.address);
 
   const [buyer, setBuyer] = useState("");
   const [faceValue, setFaceValue] = useState("");

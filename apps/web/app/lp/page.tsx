@@ -44,7 +44,8 @@ function formatShareValue(value: bigint | undefined): string {
 }
 
 export default function LPDashboard() {
-  const { connected, address } = useWalletStore();
+  const connected = useWalletStore((s) => s.connected);
+  const address = useWalletStore((s) => s.address);
   const {
     deposit,
     withdraw,

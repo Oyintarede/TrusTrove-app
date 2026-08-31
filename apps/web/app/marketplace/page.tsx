@@ -6,7 +6,7 @@ import { PageLayout } from "@/components/shared/PageLayout";
 import { InvoiceTable } from "@/components/invoice/InvoiceTable";
 import { InvoiceCard } from "@/components/invoice/InvoiceCard";
 import { ErrorBoundary } from "@/components/shared/ErrorBoundary";
-import { useInvoices } from "@/hooks/useInvoices";
+import { useInvoiceList } from "@/hooks/useInvoices";
 import { usePool } from "@/hooks/usePool";
 import { useWalletStore } from "@/store/wallet";
 import { useProfile } from "@/hooks/useProfile";
@@ -15,7 +15,8 @@ import { formatAmount } from "@/lib/assets";
 import { ShieldAlert } from "lucide-react";
 
 export default function Marketplace() {
-  const { connected, role } = useWalletStore();
+  const connected = useWalletStore((s) => s.connected);
+  const role = useWalletStore((s) => s.role);
   const { isVerified } = useProfile();
   const { stats, isStatsLoading } = usePool();
   const [statusFilter, setStatusFilter] = useState<string>("Listed");
@@ -27,7 +28,7 @@ export default function Marketplace() {
   const [maxAmount, setMaxAmount] = useState("");
   const [maxDiscount, setMaxDiscount] = useState("500"); // 500 bps max
 
-  const { invoices, isLoading, total, totalPages } = useInvoices({
+  const { invoices, isLoading, total, totalPages } = useInvoiceList({
     status: statusFilter === "ALL" ? undefined : statusFilter,
     page: invoicePage,
     limit: invoiceLimit,

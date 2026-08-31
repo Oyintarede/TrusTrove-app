@@ -23,7 +23,10 @@ vi.mock("@/hooks/useProfile", () => ({
   useProfile: () => ({ isVerified: false }),
 }));
 vi.mock("@/store/wallet", () => ({
-  useWalletStore: () => ({ role: "issuer", setRole, connected: true }),
+  useWalletStore: (selector: any) => {
+    const state = { role: "issuer", setRole, connected: true };
+    return selector ? selector(state) : state;
+  },
 }));
 vi.mock("lucide-react", () => {
   const Icon = () => null;
