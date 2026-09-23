@@ -10,13 +10,6 @@ import {
 import * as freighterApi from "@stellar/freighter-api";
 import { getConfig, getSorobanServer } from "./config.js";
 
-export interface SimulationResult {
-  estimatedFeeXlm: string;
-  functionName: string;
-  expectedResult: unknown;
-  footprintSize: number;
-}
-
 const signTransactionFn =
   (
     freighterApi as unknown as {
@@ -72,13 +65,6 @@ const signTransactionCompat = signTransactionFn as (
 
 const MAX_TRANSACTION_POLL_ATTEMPTS = 30;
 
-export interface SimulationResult {
-  estimatedFeeXlm: string;
-  functionName: string;
-  expectedResult: unknown;
-  footprintSize: number;
-}
-
 export class TransactionTimeoutError extends Error {
   readonly txHash: string;
 
@@ -131,6 +117,20 @@ async function withRetry<T>(
   }
 
   throw lastError;
+}
+
+/**
+ * Result type returned by transaction simulations.
+ */
+export interface SimulationResult {
+  /** Estimated fee in XLM (formatted to 7 decimal places) */
+  estimatedFeeXlm: string;
+  /** Name of the contract method being simulated */
+  functionName: string;
+  /** Decoded return value from the simulation, or undefined if none */
+  expectedResult: unknown;
+  /** Number of ledger entries accessed (read-only + read-write) */
+  footprintSize: number;
 }
 
 export class BaseContractClient {
