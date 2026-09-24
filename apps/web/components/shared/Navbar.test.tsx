@@ -37,6 +37,8 @@ vi.mock("lucide-react", () => {
     ExternalLink: Icon,
     Menu: Icon,
     X: Icon,
+    Moon: Icon,
+    Sun: Icon,
   };
 });
 

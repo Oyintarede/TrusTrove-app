@@ -1,10 +1,13 @@
 import type { Metadata } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
+import { NextIntlClientProvider } from "next-intl";
 import "./globals.css";
 import Providers from "./providers";
 import { Analytics } from "@vercel/analytics/next";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 import { cn } from "@/lib/utils";
+import enMessages from "../messages/en.json";
+import { THEME_BOOTSTRAP_SCRIPT } from "@/lib/theme";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -28,7 +31,16 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="dark">
+    // `suppressHydrationWarning` is required because the bootstrap script below
+    // may swap the `dark` class before React hydrates (see lib/theme.ts).
+    <html lang="en" className="dark" suppressHydrationWarning>
+      <head>
+        <script
+          // Runs before first paint so a saved (or system) light preference is
+          // applied without a flash of the server-rendered dark theme.
+          dangerouslySetInnerHTML={{ __html: THEME_BOOTSTRAP_SCRIPT }}
+        />
+      </head>
       <body
         className={`${inter.variable} ${jetbrainsMono.variable} antialiased bg-background text-foreground font-sans min-h-screen`}
       >
@@ -43,7 +55,9 @@ export default function RootLayout({
           Skip to main content
         </a>
         <Providers>
-          {children}
+          <NextIntlClientProvider locale="en" messages={enMessages}>
+            {children}
+          </NextIntlClientProvider>
           <SpeedInsights />
         </Providers>
         <Analytics />

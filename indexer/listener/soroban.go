@@ -68,9 +68,16 @@ type GetEventsParams struct {
 	Pagination  *PaginationParams `json:"pagination,omitempty"`
 }
 
+// WebhookDispatcher is the interface the listener uses to fan out events.
+// The concrete implementation lives in the webhook package.
+type WebhookDispatcher interface {
+	Dispatch(ctx context.Context, eventType string, data map[string]interface{})
+}
+
 type EventListener struct {
-	cfg    *config.Config
-	health *api.ListenerHealth
+	cfg        *config.Config
+	health     *api.ListenerHealth
+	dispatcher WebhookDispatcher
 
 	// dependency-injectable storage helpers. Defaults are wired in
 	// NewEventListener so production behavior is unchanged; tests in this
@@ -82,10 +89,11 @@ type EventListener struct {
 	isEventProcessedFn         func(context.Context, string) (bool, error)
 }
 
-func NewEventListener(cfg *config.Config, health *api.ListenerHealth) *EventListener {
+func NewEventListener(cfg *config.Config, health *api.ListenerHealth, dispatcher WebhookDispatcher) *EventListener {
 	return &EventListener{
 		cfg:                        cfg,
 		health:                     health,
+		dispatcher:                 dispatcher,
 		getCheckpointFn:            db.GetCheckpoint,
 		getLatestProcessedLedgerFn: db.GetLatestProcessedLedger,
 		upsertCheckpointFn:         db.UpsertCheckpoint,
@@ -204,7 +212,6 @@ func (l *EventListener) pollEvents(ctx context.Context, startLedger int32) (int3
 	filters := []EventFilter{{Type: "contract", ContractIDs: contractIDs}}
 	cursor := ""
 	var latestLedgerSeq int32
-	var events []SorobanEvent
 	for {
 		params := GetEventsParams{
 			StartLedger: startLedger,
@@ -248,23 +255,6 @@ func (l *EventListener) pollEvents(ctx context.Context, startLedger int32) (int3
 		}
 	}
 
-	ids := make([]string, 0, len(events))
-	for _, event := range events {
-		ids = append(ids, event.ID)
-	}
-	processed, err := db.AreEventsProcessed(ctx, ids)
-	if err != nil {
-		slog.Error("Failed to check if events are processed", "error", err)
-		processed = nil
-	}
-	for _, event := range events {
-		if processed[event.ID] {
-			continue
-		}
-		if err := l.handleEvent(ctx, event); err != nil {
-			return startLedger, fmt.Errorf("handle event %s: %w", event.ID, err)
-		}
-	}
 	if latestLedgerSeq >= startLedger {
 		return latestLedgerSeq + 1, nil
 	}
