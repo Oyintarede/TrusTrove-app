@@ -7,13 +7,17 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
+
+	"github.com/getsentry/sentry-go"
 
 	"trusttrove/indexer/api"
 	"trusttrove/indexer/config"
 	"trusttrove/indexer/db"
 	"trusttrove/indexer/listener"
+	"trusttrove/indexer/webhook"
 )
 
 func main() {
@@ -30,6 +34,34 @@ func main() {
 	if err != nil {
 		slog.Error("Failed to load configuration", "error", err)
 		os.Exit(1)
+	}
+
+	// Log secret sources for transparency (never log the secrets themselves)
+	if cfg.JWTSecretGenerated {
+		slog.Info("JWT secret: generated (fallback for development)")
+	} else {
+		slog.Info("JWT secret: sourced from environment variable")
+	}
+	if cfg.ServerSeedGenerated {
+		slog.Info("Server seed: generated (fallback for development)")
+	} else {
+		slog.Info("Server seed: sourced from environment variable")
+	}
+
+	// Initialize error tracking. With no SENTRY_DSN configured this is a
+	// documented no-op: the SDK still initializes but simply discards events.
+	if err := sentry.Init(sentry.ClientOptions{
+		Dsn:              cfg.SentryDSN,
+		Environment:      os.Getenv("APP_ENV"),
+		AttachStacktrace: true,
+	}); err != nil {
+		slog.Error("Failed to initialize Sentry", "error", err)
+	}
+	defer sentry.Flush(2 * time.Second)
+	if cfg.SentryDSN != "" {
+		slog.Info("Sentry error tracking enabled")
+	} else {
+		slog.Info("Sentry error tracking disabled (SENTRY_DSN not set)")
 	}
 
 	// 2. Initialize DB Connection Pool
@@ -55,16 +87,25 @@ func main() {
 		Handler: router,
 	}
 
-	// 4. Start Event Listener in Background
-	eventListener := listener.NewEventListener(cfg)
+	// 4. Start Webhook Dispatcher Worker in Background
+	webhookDispatcher := webhook.NewDispatcher()
+	go func() {
+		slog.Info("Starting webhook dispatcher worker...")
+		webhookDispatcher.RunWorker(ctx)
+	}()
+
+	// 5. Start Event Listener in Background
+	eventListener := listener.NewEventListener(cfg, handler.ListenerHealth(), webhookDispatcher)
+	listenerErrCh := make(chan error, 1)
 	go func() {
 		slog.Info("Starting Soroban Event Listener background task...")
 		if err := eventListener.Start(ctx); err != nil {
-			slog.Error("Event listener exited with error", "error", err)
+			handler.ListenerHealth().MarkStopped()
+			listenerErrCh <- err
 		}
 	}()
 
-	// 5. Start API Server in Background
+	// 6. Start API Server in Background
 	go func() {
 		slog.Info("Starting HTTP API Server", "port", cfg.APIPort)
 		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -73,31 +114,43 @@ func main() {
 		}
 	}()
 
-	// 6. Wait for Termination Signal
+	// 7. Wait for Termination Signal or Listener Failure
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM, syscall.SIGINT)
 
-	<-stop
-	slog.Info("Shutting down gracefully...")
+	var shutdownOnce sync.Once
+	shutdown := func(reason string) {
+		shutdownOnce.Do(func() {
+			slog.Info("Shutting down gracefully", "reason", reason)
 
-	// Cancel context to stop listener
-	cancel()
+			// Cancel context to stop listener
+			cancel()
 
-	// Shutdown HTTP Server
-	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer shutdownCancel()
+			// Shutdown HTTP Server
+			shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer shutdownCancel()
 
-	if err := server.Shutdown(shutdownCtx); err != nil {
-		slog.Error("HTTP API server graceful shutdown failed", "error", err)
-	} else {
-		slog.Info("HTTP API server successfully shut down")
+			if err := server.Shutdown(shutdownCtx); err != nil {
+				slog.Error("HTTP API server graceful shutdown failed", "error", err)
+			} else {
+				slog.Info("HTTP API server successfully shut down")
+			}
+
+			// Close DB connection pool
+			if db.Pool != nil {
+				slog.Info("Closing database pool...")
+				db.Pool.Close()
+				slog.Info("Database pool closed successfully")
+			}
+		})
 	}
 
-	// Close DB connection pool
-	if db.Pool != nil {
-		slog.Info("Closing database pool...")
-		db.Pool.Close()
-		slog.Info("Database pool closed successfully")
+	select {
+	case err := <-listenerErrCh:
+		slog.Error("Event listener exited with error", "error", err)
+		shutdown("listener failure")
+	case <-stop:
+		shutdown("termination signal")
 	}
 
 	slog.Info("TrusTrove Indexer and API server stopped.")
