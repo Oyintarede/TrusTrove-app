@@ -135,7 +135,8 @@ describe("useInvoice", () => {
       vi.mocked(client.getByStatus).mockResolvedValue([]);
 
       const { result, rerender } = renderHook(
-        ({ status }) => useInvoicesByStatus(status, SIGNER, makeOptions(client)),
+        ({ status }) =>
+          useInvoicesByStatus(status, SIGNER, makeOptions(client)),
         { initialProps: { status: "Listed" } },
       );
 
@@ -186,7 +187,8 @@ describe("useInvoice", () => {
       vi.mocked(client.getByIssuer).mockResolvedValue([]);
 
       const { result, rerender } = renderHook(
-        ({ issuer }) => useInvoicesByIssuer(issuer, SIGNER, makeOptions(client)),
+        ({ issuer }) =>
+          useInvoicesByIssuer(issuer, SIGNER, makeOptions(client)),
         { initialProps: { issuer: ISSUER } },
       );
 
