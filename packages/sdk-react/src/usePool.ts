@@ -65,6 +65,25 @@ export function useLPPosition(
   );
 }
 
+/**
+ * Watches the current pool utilization rate in basis points. Wraps
+ * `PoolClient.getUtilizationRate()`. Returns `0` when the pool has no
+ * deposits.
+ *
+ * @param signerPublicKey - Public key used to simulate the read call.
+ * @param options - Injected client instance or contract ID.
+ */
+export function useUtilizationRate(
+  signerPublicKey: string,
+  options: UsePoolOptions,
+): AsyncQueryState<number> {
+  const client = useMemo(() => poolClient(options), [options]);
+  return useAsyncQuery(
+    () => client.getUtilizationRate(signerPublicKey),
+    [client, signerPublicKey],
+  );
+}
+
 export interface UsePoolMutationsOptions {
   /**
    * An already-configured PoolClient instance. When provided it is used
@@ -84,6 +103,22 @@ export interface PoolMutationResult {
   deposit: AsyncMutationState<[lp: string, usdcAmount: bigint], string>;
   /** Withdraw LP shares from the pool (`PoolClient.withdraw`). */
   withdraw: AsyncMutationState<[lp: string, shares: bigint], string>;
+  /**
+   * Fund a listed invoice from pool liquidity (`PoolClient.fundInvoice`).
+   * Intended for the funder flow; the web app already uses this operation.
+   */
+  fundInvoice: AsyncMutationState<[invoiceIdHex: string], boolean>;
+  /**
+   * Record a repayment into the pool (`PoolClient.receiveRepayment`).
+   *
+   * Note: on-chain, `receive_repayment` is normally invoked by the invoice
+   * contract as part of `InvoiceClient.repay` rather than by end users, so
+   * this mutation is exposed for completeness and admin/integration tooling.
+   */
+  receiveRepayment: AsyncMutationState<
+    [invoiceIdHex: string, amount: bigint],
+    boolean
+  >;
 }
 
 /**
@@ -105,6 +140,13 @@ export function usePoolMutations(
   const withdraw = useAsyncMutation((lp: string, shares: bigint) =>
     client.withdraw(lp, shares, signerPublicKey),
   );
+  const fundInvoice = useAsyncMutation((invoiceIdHex: string) =>
+    client.fundInvoice(invoiceIdHex, signerPublicKey),
+  );
+  const receiveRepayment = useAsyncMutation(
+    (invoiceIdHex: string, amount: bigint) =>
+      client.receiveRepayment(invoiceIdHex, amount, signerPublicKey),
+  );
 
-  return { deposit, withdraw };
+  return { deposit, withdraw, fundInvoice, receiveRepayment };
 }

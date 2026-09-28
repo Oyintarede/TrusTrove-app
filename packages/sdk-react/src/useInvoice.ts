@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { InvoiceClient, Invoice } from "@trusttrove/sdk";
+import { InvoiceClient, Invoice, InvoiceStatus } from "@trusttrove/sdk";
 import {
   useAsyncQuery,
   useAsyncMutation,
@@ -26,6 +26,81 @@ function invoiceClient(options: UseInvoiceOptions): InvoiceClient {
   if (options.contractId) return new InvoiceClient(options.contractId);
   throw new Error(
     "useInvoice: provide an injected InvoiceClient instance or a contractId",
+  );
+}
+
+/**
+ * Shared implementation for the invoice list queries. Wraps the given
+ * `InvoiceClient` read method that returns an `Invoice[]`.
+ */
+function useInvoiceList(
+  queryKey: string,
+  fetch: (client: InvoiceClient) => Promise<Invoice[]>,
+  deps: unknown[],
+  options: UseInvoiceOptions,
+): AsyncQueryState<Invoice[]> {
+  const client = useMemo(() => invoiceClient(options), [options]);
+  return useAsyncQuery(() => fetch(client), [client, ...deps]);
+}
+
+/**
+ * Lists invoices filtered by on-chain status. Wraps `InvoiceClient.getByStatus()`.
+ *
+ * @param status - The invoice status to filter by (e.g. `"Listed"`, `"Funded"`).
+ * @param signerPublicKey - Public key used to simulate the read call.
+ * @param options - Injected client instance or contract ID.
+ */
+export function useInvoicesByStatus(
+  status: InvoiceStatus,
+  signerPublicKey: string,
+  options: UseInvoiceOptions,
+): AsyncQueryState<Invoice[]> {
+  return useInvoiceList(
+    "useInvoicesByStatus",
+    (client) => client.getByStatus(status, signerPublicKey),
+    [status, signerPublicKey],
+    options,
+  );
+}
+
+/**
+ * Lists invoices issued by a given address. Wraps `InvoiceClient.getByIssuer()`.
+ *
+ * @param issuer - The Stellar address of the invoice issuer.
+ * @param signerPublicKey - Public key used to simulate the read call.
+ * @param options - Injected client instance or contract ID.
+ */
+export function useInvoicesByIssuer(
+  issuer: string,
+  signerPublicKey: string,
+  options: UseInvoiceOptions,
+): AsyncQueryState<Invoice[]> {
+  return useInvoiceList(
+    "useInvoicesByIssuer",
+    (client) => client.getByIssuer(issuer, signerPublicKey),
+    [issuer, signerPublicKey],
+    options,
+  );
+}
+
+/**
+ * Lists invoices where the given address is the buyer. Wraps
+ * `InvoiceClient.getByBuyer()`.
+ *
+ * @param buyer - The Stellar address of the invoice buyer.
+ * @param signerPublicKey - Public key used to simulate the read call.
+ * @param options - Injected client instance or contract ID.
+ */
+export function useInvoicesByBuyer(
+  buyer: string,
+  signerPublicKey: string,
+  options: UseInvoiceOptions,
+): AsyncQueryState<Invoice[]> {
+  return useInvoiceList(
+    "useInvoicesByBuyer",
+    (client) => client.getByBuyer(buyer, signerPublicKey),
+    [buyer, signerPublicKey],
+    options,
   );
 }
 

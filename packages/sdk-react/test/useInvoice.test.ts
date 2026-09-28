@@ -3,6 +3,9 @@ import { renderHook, waitFor, act } from "@testing-library/react";
 import { InvoiceClient } from "@trusttrove/sdk";
 import {
   useInvoice,
+  useInvoicesByStatus,
+  useInvoicesByIssuer,
+  useInvoicesByBuyer,
   useInvoiceMutations,
   UseInvoiceOptions,
 } from "../src/useInvoice.js";
@@ -14,6 +17,9 @@ vi.mock("@trusttrove/sdk", () => {
       this.contractId = contractId;
     }
     get = vi.fn();
+    getByStatus = vi.fn();
+    getByIssuer = vi.fn();
+    getByBuyer = vi.fn();
     create = vi.fn();
     listForFinancing = vi.fn();
     markShipped = vi.fn();
@@ -85,6 +91,162 @@ describe("useInvoice", () => {
       rerender({ invoice: "ef01" });
       await waitFor(() => expect(client.get).toHaveBeenCalledTimes(2));
       expect(client.get).toHaveBeenNthCalledWith(2, "ef01", SIGNER);
+    });
+  });
+
+  describe("useInvoicesByStatus", () => {
+    it("returns invoices with loading/error/data state", async () => {
+      const invoices = [
+        { id: INVOICE_HEX, status: "Listed" },
+        { id: "ef02", status: "Listed" },
+      ];
+      const client = new InvoiceClient(CONTRACT_ID);
+      vi.mocked(client.getByStatus).mockResolvedValue(invoices as any);
+
+      const { result } = renderHook(() =>
+        useInvoicesByStatus("Listed", SIGNER, makeOptions(client)),
+      );
+
+      await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+      expect(result.current.data).toEqual(invoices);
+      expect(result.current.error).toBeNull();
+      expect(client.getByStatus).toHaveBeenCalledWith("Listed", SIGNER);
+    });
+
+    it("surfaces read errors", async () => {
+      const client = new InvoiceClient(CONTRACT_ID);
+      vi.mocked(client.getByStatus).mockRejectedValue(
+        new Error("status read failed"),
+      );
+
+      const { result } = renderHook(() =>
+        useInvoicesByStatus("Listed", SIGNER, makeOptions(client)),
+      );
+
+      await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+      expect(result.current.data).toBeNull();
+      expect(result.current.error).toEqual(new Error("status read failed"));
+    });
+
+    it("refetches when the status changes", async () => {
+      const client = new InvoiceClient(CONTRACT_ID);
+      vi.mocked(client.getByStatus).mockResolvedValue([]);
+
+      const { result, rerender } = renderHook(
+        ({ status }) => useInvoicesByStatus(status, SIGNER, makeOptions(client)),
+        { initialProps: { status: "Listed" } },
+      );
+
+      await waitFor(() => expect(result.current.isLoading).toBe(false));
+      expect(client.getByStatus).toHaveBeenNthCalledWith(1, "Listed", SIGNER);
+
+      rerender({ status: "Funded" });
+      await waitFor(() => expect(client.getByStatus).toHaveBeenCalledTimes(2));
+      expect(client.getByStatus).toHaveBeenNthCalledWith(2, "Funded", SIGNER);
+    });
+  });
+
+  describe("useInvoicesByIssuer", () => {
+    it("returns invoices with loading/error/data state", async () => {
+      const invoices = [{ id: INVOICE_HEX, issuer: ISSUER }];
+      const client = new InvoiceClient(CONTRACT_ID);
+      vi.mocked(client.getByIssuer).mockResolvedValue(invoices as any);
+
+      const { result } = renderHook(() =>
+        useInvoicesByIssuer(ISSUER, SIGNER, makeOptions(client)),
+      );
+
+      await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+      expect(result.current.data).toEqual(invoices);
+      expect(result.current.error).toBeNull();
+      expect(client.getByIssuer).toHaveBeenCalledWith(ISSUER, SIGNER);
+    });
+
+    it("surfaces read errors", async () => {
+      const client = new InvoiceClient(CONTRACT_ID);
+      vi.mocked(client.getByIssuer).mockRejectedValue(
+        new Error("issuer read failed"),
+      );
+
+      const { result } = renderHook(() =>
+        useInvoicesByIssuer(ISSUER, SIGNER, makeOptions(client)),
+      );
+
+      await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+      expect(result.current.data).toBeNull();
+      expect(result.current.error).toEqual(new Error("issuer read failed"));
+    });
+
+    it("refetches when the issuer changes", async () => {
+      const client = new InvoiceClient(CONTRACT_ID);
+      vi.mocked(client.getByIssuer).mockResolvedValue([]);
+
+      const { result, rerender } = renderHook(
+        ({ issuer }) => useInvoicesByIssuer(issuer, SIGNER, makeOptions(client)),
+        { initialProps: { issuer: ISSUER } },
+      );
+
+      await waitFor(() => expect(result.current.isLoading).toBe(false));
+      expect(client.getByIssuer).toHaveBeenNthCalledWith(1, ISSUER, SIGNER);
+
+      rerender({ issuer: BUYER });
+      await waitFor(() => expect(client.getByIssuer).toHaveBeenCalledTimes(2));
+      expect(client.getByIssuer).toHaveBeenNthCalledWith(2, BUYER, SIGNER);
+    });
+  });
+
+  describe("useInvoicesByBuyer", () => {
+    it("returns invoices with loading/error/data state", async () => {
+      const invoices = [{ id: INVOICE_HEX, buyer: BUYER }];
+      const client = new InvoiceClient(CONTRACT_ID);
+      vi.mocked(client.getByBuyer).mockResolvedValue(invoices as any);
+
+      const { result } = renderHook(() =>
+        useInvoicesByBuyer(BUYER, SIGNER, makeOptions(client)),
+      );
+
+      await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+      expect(result.current.data).toEqual(invoices);
+      expect(result.current.error).toBeNull();
+      expect(client.getByBuyer).toHaveBeenCalledWith(BUYER, SIGNER);
+    });
+
+    it("surfaces read errors", async () => {
+      const client = new InvoiceClient(CONTRACT_ID);
+      vi.mocked(client.getByBuyer).mockRejectedValue(
+        new Error("buyer read failed"),
+      );
+
+      const { result } = renderHook(() =>
+        useInvoicesByBuyer(BUYER, SIGNER, makeOptions(client)),
+      );
+
+      await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+      expect(result.current.data).toBeNull();
+      expect(result.current.error).toEqual(new Error("buyer read failed"));
+    });
+
+    it("refetches when the buyer changes", async () => {
+      const client = new InvoiceClient(CONTRACT_ID);
+      vi.mocked(client.getByBuyer).mockResolvedValue([]);
+
+      const { result, rerender } = renderHook(
+        ({ buyer }) => useInvoicesByBuyer(buyer, SIGNER, makeOptions(client)),
+        { initialProps: { buyer: BUYER } },
+      );
+
+      await waitFor(() => expect(result.current.isLoading).toBe(false));
+      expect(client.getByBuyer).toHaveBeenNthCalledWith(1, BUYER, SIGNER);
+
+      rerender({ buyer: ISSUER });
+      await waitFor(() => expect(client.getByBuyer).toHaveBeenCalledTimes(2));
+      expect(client.getByBuyer).toHaveBeenNthCalledWith(2, ISSUER, SIGNER);
     });
   });
 
