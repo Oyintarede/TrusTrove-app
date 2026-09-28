@@ -16,7 +16,9 @@ export interface UseAgentRegistryOptions {
   contractId?: string;
 }
 
-function agentRegistryClient(options: UseAgentRegistryOptions): AgentRegistryClient {
+function agentRegistryClient(
+  options: UseAgentRegistryOptions,
+): AgentRegistryClient {
   if (options.client) return options.client;
   if (options.contractId) return new AgentRegistryClient(options.contractId);
   throw new Error(
