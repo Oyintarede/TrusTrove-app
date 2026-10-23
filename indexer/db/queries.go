@@ -37,6 +37,32 @@ type DbPoolStats struct {
 	UpdatedAt             time.Time `json:"updated_at"`
 }
 
+var (
+	ErrInvoiceNotFound          = errors.New("invoice not found")
+	ErrInvalidInvoiceTransition = errors.New("invalid invoice status transition")
+)
+
+func updateInvoice(ctx context.Context, id, operation, targetStatus, query string, args ...any) error {
+	tag, err := Pool.Exec(ctx, query, args...)
+	if err != nil {
+		return fmt.Errorf("queries: %s: %w", operation, err)
+	}
+	if tag.RowsAffected() > 0 {
+		return nil
+	}
+
+	var currentStatus string
+	err = Pool.QueryRow(ctx, `SELECT status FROM invoices WHERE id = $1`, id).Scan(&currentStatus)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return fmt.Errorf("queries: %s: %w: %s", operation, ErrInvoiceNotFound, id)
+	}
+	if err != nil {
+		return fmt.Errorf("queries: %s: inspect invoice after update: %w", operation, err)
+	}
+
+	return fmt.Errorf("queries: %s: %w: invoice %s is %q, cannot transition to %q", operation, ErrInvalidInvoiceTransition, id, currentStatus, targetStatus)
+}
+
 func InsertInvoice(ctx context.Context, inv *DbInvoice) error {
 	query := `
 		INSERT INTO invoices (
@@ -128,78 +154,54 @@ func UpdateInvoiceListed(ctx context.Context, id string, status string, discount
 	query := `
 		UPDATE invoices 
 		SET status = $1, discount_bps = $2
-		WHERE id = $3
+		WHERE id = $3 AND status = 'Created'
 	`
-	_, err := Pool.Exec(ctx, query, status, discountBps, id)
-	if err != nil {
-		return fmt.Errorf("queries: update invoice listed: %w", err)
-	}
-	return nil
+	return updateInvoice(ctx, id, "update invoice listed", "Listed", query, status, discountBps, id)
 }
 
 func UpdateInvoiceFunded(ctx context.Context, id string, status string, fundedAmount string, fundedAt int64) error {
 	query := `
 		UPDATE invoices 
 		SET status = $1, funded_amount = $2, funded_at = $3
-		WHERE id = $4
+		WHERE id = $4 AND status = 'Listed'
 	`
-	_, err := Pool.Exec(ctx, query, status, fundedAmount, fundedAt, id)
-	if err != nil {
-		return fmt.Errorf("queries: update invoice funded: %w", err)
-	}
-	return nil
+	return updateInvoice(ctx, id, "update invoice funded", "Funded", query, status, fundedAmount, fundedAt, id)
 }
 
 func UpdateInvoiceShipped(ctx context.Context, id string, status string, shippedAt int64) error {
 	query := `
 		UPDATE invoices 
 		SET status = $1, shipped_at = $2, issuer_confirmed = TRUE
-		WHERE id = $3
+		WHERE id = $3 AND status = 'Funded'
 	`
-	_, err := Pool.Exec(ctx, query, status, shippedAt, id)
-	if err != nil {
-		return fmt.Errorf("queries: update invoice shipped: %w", err)
-	}
-	return nil
+	return updateInvoice(ctx, id, "update invoice shipped", "Active", query, status, shippedAt, id)
 }
 
 func UpdateInvoiceDeliveryConfirmed(ctx context.Context, id string, status string) error {
 	query := `
 		UPDATE invoices 
 		SET status = $1, buyer_confirmed = TRUE
-		WHERE id = $2
+		WHERE id = $2 AND status = 'Active'
 	`
-	_, err := Pool.Exec(ctx, query, status, id)
-	if err != nil {
-		return fmt.Errorf("queries: update invoice delivery confirmed: %w", err)
-	}
-	return nil
+	return updateInvoice(ctx, id, "update invoice delivery confirmed", "Confirmed", query, status, id)
 }
 
 func UpdateInvoiceRepaid(ctx context.Context, id string, status string, repaidAt int64) error {
 	query := `
 		UPDATE invoices 
 		SET status = $1, repaid_at = $2
-		WHERE id = $3
+		WHERE id = $3 AND status = 'Confirmed'
 	`
-	_, err := Pool.Exec(ctx, query, status, repaidAt, id)
-	if err != nil {
-		return fmt.Errorf("queries: update invoice repaid: %w", err)
-	}
-	return nil
+	return updateInvoice(ctx, id, "update invoice repaid", "Repaid", query, status, repaidAt, id)
 }
 
 func UpdateInvoiceStatus(ctx context.Context, id string, status string) error {
 	query := `
 		UPDATE invoices 
 		SET status = $1
-		WHERE id = $2
+		WHERE id = $2 AND status IN ('Funded', 'Active', 'Confirmed')
 	`
-	_, err := Pool.Exec(ctx, query, status, id)
-	if err != nil {
-		return fmt.Errorf("queries: update invoice status: %w", err)
-	}
-	return nil
+	return updateInvoice(ctx, id, "update invoice status", "Defaulted", query, status, id)
 }
 
 func GetPoolStats(ctx context.Context) (*DbPoolStats, error) {
@@ -237,12 +239,12 @@ func UpdatePoolStats(ctx context.Context, stats *DbPoolStats) error {
 		WHERE id = 1
 	`
 	args := pgx.NamedArgs{
-		"total_deposits":            stats.TotalDeposits,
-		"total_funded":              stats.TotalFunded,
-		"available_liquidity":       stats.AvailableLiquidity,
-		"utilization_rate_bps":      stats.UtilizationRateBps,
-		"total_yield_distributed":   stats.TotalYieldDistributed,
-		"active_invoice_count":      stats.ActiveInvoiceCount,
+		"total_deposits":          stats.TotalDeposits,
+		"total_funded":            stats.TotalFunded,
+		"available_liquidity":     stats.AvailableLiquidity,
+		"utilization_rate_bps":    stats.UtilizationRateBps,
+		"total_yield_distributed": stats.TotalYieldDistributed,
+		"active_invoice_count":    stats.ActiveInvoiceCount,
 	}
 	_, err := Pool.Exec(ctx, query, args)
 	if err != nil {
@@ -288,4 +290,3 @@ func GetLatestProcessedLedger(ctx context.Context) (int32, error) {
 	}
 	return ledger, nil
 }
-

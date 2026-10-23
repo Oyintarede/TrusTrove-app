@@ -39,7 +39,12 @@ func RunMigration(ctx context.Context) error {
 		migrationPath = filepath.Join("indexer", "db", "migrations", "001_initial.sql")
 		migrationBytes, err = os.ReadFile(migrationPath)
 		if err != nil {
-			return fmt.Errorf("failed to read migration file: %w", err)
+			// Tests run with the package directory as the working directory.
+			migrationPath = filepath.Join("migrations", "001_initial.sql")
+			migrationBytes, err = os.ReadFile(migrationPath)
+			if err != nil {
+				return fmt.Errorf("failed to read migration file: %w", err)
+			}
 		}
 	}
 
