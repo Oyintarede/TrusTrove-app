@@ -5,50 +5,29 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
-
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func TestInvoiceUpdatesEnforceLifecycle(t *testing.T) {
-	databaseURL := os.Getenv("INDEXER_TEST_DATABASE_URL")
-	if databaseURL == "" {
-		t.Skip("set INDEXER_TEST_DATABASE_URL to run PostgreSQL integration tests")
-	}
-
+	skipIfNoDB(t)
 	ctx := context.Background()
-	pool, err := pgxpool.New(ctx, databaseURL)
-	if err != nil {
-		t.Fatalf("create test database pool: %v", err)
-	}
-	previousPool := Pool
-	Pool = pool
-	t.Cleanup(func() {
-		pool.Close()
-		Pool = previousPool
-	})
-	if err := pool.Ping(ctx); err != nil {
-		t.Fatalf("connect to test database: %v", err)
-	}
-	if err := RunMigration(ctx); err != nil {
-		t.Fatalf("run test database migrations: %v", err)
-	}
 
 	tests := []struct {
 		name      string
 		target    string
 		validFrom []string
 		staleFrom string
-		update    func(context.Context, string) error
+		update    func(context.Context, Querier, string) error
 	}{
 		{
 			name:      "listed",
 			target:    "Listed",
 			validFrom: []string{"Created"},
 			staleFrom: "Funded",
-			update: func(ctx context.Context, id string) error {
-				return UpdateInvoiceListed(ctx, id, "Listed", 250)
+			update: func(ctx context.Context, q Querier, id string) error {
+				return UpdateInvoiceListed(ctx, q, id, "Listed", 250)
 			},
 		},
 		{
@@ -56,8 +35,8 @@ func TestInvoiceUpdatesEnforceLifecycle(t *testing.T) {
 			target:    "Funded",
 			validFrom: []string{"Listed"},
 			staleFrom: "Active",
-			update: func(ctx context.Context, id string) error {
-				return UpdateInvoiceFunded(ctx, id, "Funded", "100", 1)
+			update: func(ctx context.Context, q Querier, id string) error {
+				return UpdateInvoiceFunded(ctx, q, id, "Funded", "100", 1)
 			},
 		},
 		{
@@ -65,8 +44,8 @@ func TestInvoiceUpdatesEnforceLifecycle(t *testing.T) {
 			target:    "Active",
 			validFrom: []string{"Funded"},
 			staleFrom: "Confirmed",
-			update: func(ctx context.Context, id string) error {
-				return UpdateInvoiceShipped(ctx, id, "Active", 1)
+			update: func(ctx context.Context, q Querier, id string) error {
+				return UpdateInvoiceShipped(ctx, q, id, "Active", 1)
 			},
 		},
 		{
@@ -74,8 +53,8 @@ func TestInvoiceUpdatesEnforceLifecycle(t *testing.T) {
 			target:    "Confirmed",
 			validFrom: []string{"Active"},
 			staleFrom: "Repaid",
-			update: func(ctx context.Context, id string) error {
-				return UpdateInvoiceDeliveryConfirmed(ctx, id, "Confirmed")
+			update: func(ctx context.Context, q Querier, id string) error {
+				return UpdateInvoiceDeliveryConfirmed(ctx, q, id, "Confirmed", 1)
 			},
 		},
 		{
@@ -83,8 +62,8 @@ func TestInvoiceUpdatesEnforceLifecycle(t *testing.T) {
 			target:    "Repaid",
 			validFrom: []string{"Confirmed"},
 			staleFrom: "Repaid",
-			update: func(ctx context.Context, id string) error {
-				return UpdateInvoiceRepaid(ctx, id, "Repaid", 1)
+			update: func(ctx context.Context, q Querier, id string) error {
+				return UpdateInvoiceRepaid(ctx, q, id, "Repaid", 1)
 			},
 		},
 		{
@@ -92,15 +71,15 @@ func TestInvoiceUpdatesEnforceLifecycle(t *testing.T) {
 			target:    "Defaulted",
 			validFrom: []string{"Funded", "Active", "Confirmed"},
 			staleFrom: "Defaulted",
-			update: func(ctx context.Context, id string) error {
-				return UpdateInvoiceStatus(ctx, id, "Defaulted")
+			update: func(ctx context.Context, q Querier, id string) error {
+				return UpdateInvoiceStatus(ctx, q, id, "Defaulted")
 			},
 		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name+"/not-found", func(t *testing.T) {
-			err := test.update(ctx, newTestInvoiceID())
+			err := test.update(ctx, Pool, newTestInvoiceID())
 			if !errors.Is(err, ErrInvoiceNotFound) {
 				t.Fatalf("expected ErrInvoiceNotFound, got %v", err)
 			}
@@ -108,7 +87,7 @@ func TestInvoiceUpdatesEnforceLifecycle(t *testing.T) {
 
 		t.Run(test.name+"/stale", func(t *testing.T) {
 			id := insertTestInvoice(t, ctx, test.staleFrom)
-			err := test.update(ctx, id)
+			err := test.update(ctx, Pool, id)
 			if !errors.Is(err, ErrInvalidInvoiceTransition) {
 				t.Fatalf("expected ErrInvalidInvoiceTransition, got %v", err)
 			}
@@ -118,13 +97,20 @@ func TestInvoiceUpdatesEnforceLifecycle(t *testing.T) {
 		for _, source := range test.validFrom {
 			t.Run(test.name+"/from-"+source, func(t *testing.T) {
 				id := insertTestInvoice(t, ctx, source)
-				if err := test.update(ctx, id); err != nil {
+				if err := test.update(ctx, Pool, id); err != nil {
 					t.Fatalf("update invoice: %v", err)
 				}
 				assertInvoiceStatus(t, ctx, id, test.target)
 			})
 		}
 	}
+
+	t.Run("attestation/not-found", func(t *testing.T) {
+		err := UpdateInvoiceAttestation(ctx, Pool, newTestInvoiceID(), "agent", "", 0, 1)
+		if !errors.Is(err, ErrInvoiceNotFound) {
+			t.Fatalf("expected ErrInvoiceNotFound, got %v", err)
+		}
+	})
 }
 
 func insertTestInvoice(t *testing.T, ctx context.Context, status string) string {
@@ -158,12 +144,7 @@ func assertInvoiceStatus(t *testing.T, ctx context.Context, id, want string) {
 
 func newTestInvoiceID() string {
 	return fmt.Sprintf("queries-test-%d", time.Now().UnixNano())
-	"fmt"
-	"os"
-	"path/filepath"
-	"testing"
-	"time"
-)
+}
 
 // skipIfNoDB skips the test when TEST_DATABASE_URL is not set.
 // This allows go test ./... to pass in CI without a live database.
@@ -606,7 +587,9 @@ func TestUpdateInvoiceFunded(t *testing.T) {
 
 	ctx := context.Background()
 	id := fmt.Sprintf("funded-test%d", time.Now().UnixNano())
-	if _, err := InsertInvoice(ctx, Pool, newTestInvoice(id)); err != nil {
+	invoice := newTestInvoice(id)
+	invoice.Status = "Listed"
+	if _, err := InsertInvoice(ctx, Pool, invoice); err != nil {
 		t.Fatalf("InsertInvoice: %v", err)
 	}
 	t.Cleanup(func() {
@@ -640,7 +623,9 @@ func TestUpdateInvoiceShipped(t *testing.T) {
 
 	ctx := context.Background()
 	id := fmt.Sprintf("shipped-test%d", time.Now().UnixNano())
-	if _, err := InsertInvoice(ctx, Pool, newTestInvoice(id)); err != nil {
+	invoice := newTestInvoice(id)
+	invoice.Status = "Funded"
+	if _, err := InsertInvoice(ctx, Pool, invoice); err != nil {
 		t.Fatalf("InsertInvoice: %v", err)
 	}
 	t.Cleanup(func() {
@@ -674,7 +659,9 @@ func TestUpdateInvoiceDeliveryConfirmed(t *testing.T) {
 
 	ctx := context.Background()
 	id := fmt.Sprintf("delivered-test%d", time.Now().UnixNano())
-	if _, err := InsertInvoice(ctx, Pool, newTestInvoice(id)); err != nil {
+	invoice := newTestInvoice(id)
+	invoice.Status = "Active"
+	if _, err := InsertInvoice(ctx, Pool, invoice); err != nil {
 		t.Fatalf("InsertInvoice: %v", err)
 	}
 	t.Cleanup(func() {
@@ -708,7 +695,9 @@ func TestUpdateInvoiceRepaid(t *testing.T) {
 
 	ctx := context.Background()
 	id := fmt.Sprintf("repaid-test%d", time.Now().UnixNano())
-	if _, err := InsertInvoice(ctx, Pool, newTestInvoice(id)); err != nil {
+	invoice := newTestInvoice(id)
+	invoice.Status = "Confirmed"
+	if _, err := InsertInvoice(ctx, Pool, invoice); err != nil {
 		t.Fatalf("InsertInvoice: %v", err)
 	}
 	t.Cleanup(func() {
@@ -739,7 +728,9 @@ func TestUpdateInvoiceStatus(t *testing.T) {
 
 	ctx := context.Background()
 	id := fmt.Sprintf("status-test%d", time.Now().UnixNano())
-	if _, err := InsertInvoice(ctx, Pool, newTestInvoice(id)); err != nil {
+	invoice := newTestInvoice(id)
+	invoice.Status = "Funded"
+	if _, err := InsertInvoice(ctx, Pool, invoice); err != nil {
 		t.Fatalf("InsertInvoice: %v", err)
 	}
 	t.Cleanup(func() {

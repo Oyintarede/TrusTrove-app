@@ -104,16 +104,6 @@ const migrationLockID = 847362910123
 func RunMigration(ctx context.Context) error {
 	migrationDir, err := locateMigrationDir()
 	if err != nil {
-		// Fallback for execution from the monorepo root
-		migrationPath = filepath.Join("indexer", "db", "migrations", "001_initial.sql")
-		migrationBytes, err = os.ReadFile(migrationPath)
-		if err != nil {
-			// Tests run with the package directory as the working directory.
-			migrationPath = filepath.Join("migrations", "001_initial.sql")
-			migrationBytes, err = os.ReadFile(migrationPath)
-			if err != nil {
-				return fmt.Errorf("failed to read migration file: %w", err)
-			}
 		return err
 	}
 
