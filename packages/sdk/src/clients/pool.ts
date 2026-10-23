@@ -1,156 +1,181 @@
-import { Address, nativeToScVal, scValToNative, xdr } from '@stellar/stellar-sdk';
-import { BaseContractClient } from '../base.js';
-import { LPPosition, PoolStats } from '../types/index.js';
-
-function parsePoolStats(native: unknown): PoolStats {
-  const getBigInt = (v: unknown) => typeof v === 'bigint' ? v : BigInt(String(v || 0));
-  const getNumber = (v: unknown) => typeof v === 'bigint' ? Number(v) : Number(v || 0);
-
-  let totalDeposits = 0n;
-  let totalFunded = 0n;
-  let availableLiquidity = 0n;
-  let utilizationRateBps = 0;
-  let totalYieldDistributed = 0n;
-  let activeInvoiceCount = 0;
-
-  if (native instanceof Map) {
-    totalDeposits = getBigInt(native.get('total_deposits'));
-    totalFunded = getBigInt(native.get('total_funded'));
-    availableLiquidity = getBigInt(native.get('available_liquidity'));
-    utilizationRateBps = getNumber(native.get('utilization_rate_bps'));
-    totalYieldDistributed = getBigInt(native.get('total_yield_distributed'));
-    activeInvoiceCount = getNumber(native.get('active_invoice_count'));
-  } else if (typeof native === 'object' && native !== null) {
-    const obj = native as Record<string, unknown>;
-    totalDeposits = getBigInt(obj.total_deposits);
-    totalFunded = getBigInt(obj.total_funded);
-    availableLiquidity = getBigInt(obj.available_liquidity);
-    utilizationRateBps = getNumber(obj.utilization_rate_bps);
-    totalYieldDistributed = getBigInt(obj.total_yield_distributed);
-    activeInvoiceCount = getNumber(obj.active_invoice_count);
-  }
-
-  return {
-    totalDeposits,
-    totalFunded,
-    availableLiquidity,
-    utilizationRateBps,
-    totalYieldDistributed,
-    activeInvoiceCount,
-  };
-}
-
-function parseLPPosition(native: unknown): LPPosition {
-  const getBigInt = (v: unknown) => typeof v === 'bigint' ? v : BigInt(String(v || 0));
-  const getNumber = (v: unknown) => typeof v === 'bigint' ? Number(v) : Number(v || 0);
-
-  let shares = 0n;
-  let usdcValue = 0n;
-  let yieldEarned = 0n;
-  let depositCount = 0;
-
-  if (native instanceof Map) {
-    shares = getBigInt(native.get('shares'));
-    usdcValue = getBigInt(native.get('usdc_value'));
-    yieldEarned = getBigInt(native.get('yield_earned'));
-    depositCount = getNumber(native.get('deposit_count'));
-  } else if (typeof native === 'object' && native !== null) {
-    const obj = native as Record<string, unknown>;
-    shares = getBigInt(obj.shares);
-    usdcValue = getBigInt(obj.usdc_value);
-    yieldEarned = getBigInt(obj.yield_earned);
-    depositCount = getNumber(obj.deposit_count);
-  }
-
-  return {
-    shares,
-    usdcValue,
-    yieldEarned,
-    depositCount,
-  };
-}
+import {
+  Address,
+  nativeToScVal,
+  scValToNative,
+  xdr,
+} from "@stellar/stellar-sdk";
+import { BaseContractClient } from "../base.js";
+import { LPPosition, PoolStats } from "../types/index.js";
+import { parsePoolStats, parseLPPosition } from "../types/schemas.js";
 
 export class PoolClient extends BaseContractClient {
+  /**
+   * Initializes the pool contract with its admin address.
+   * Side effect: stores the admin address on-chain. Can only be called once — a second call panics.
+   * @param adminAddress - The Stellar address to set as the pool contract admin
+   * @param signerPublicKey - The public key that must sign the transaction. Must be the deployer/admin
+   * @returns The transaction hash
+   * @throws Error if the contract is already initialized, simulation fails, or transaction submission fails
+   */
+  async initialize(
+    adminAddress: string,
+    signerPublicKey: string,
+  ): Promise<string> {
+    const args = [new Address(adminAddress).toScVal()];
+    return this.writeContract("initialize", args, signerPublicKey);
+  }
+
+  /**
+   * Deposits USDC into the pool and issues LP shares.
+   * Side effect: transfers `usdcAmount` USDC from `lp` to the pool and credits the LP with shares.
+   * `lp.require_auth()` is enforced on-chain.
+   * @param lp - The public key of the liquidity provider depositing USDC
+   * @param usdcAmount - The USDC amount to deposit in stroops (1 USDC = 10,000,000 stroops)
+   * @param signerPublicKey - The public key that must sign the transaction. Must match `lp`
+   * @returns The transaction hash
+   * @throws Error if simulation fails or transaction submission fails
+   */
   async deposit(
     lp: string,
     usdcAmount: bigint,
-    signerPublicKey: string
-  ): Promise<bigint> {
-    const args = [
-      new Address(lp).toScVal(),
-      nativeToScVal(usdcAmount, { type: 'u128' }),
-    ];
-    // deposit returns shares as u128
-    return this.writeContract('deposit', args, signerPublicKey).then(async (txHash) => {
-      // Return value can be parsed or we can return the receipt, but let's just return the transaction hash or simulated shares.
-      // Since it's a write call, it returns txHash string.
-      // Wait, the client method signature u128 is returned by the contract, but writeContract returns the txHash string on-chain.
-      // Let's modify the SDK method return to be Promise<string> since on-chain write calls return transaction hashes!
-      // This is a standard and robust pattern because clients need the txHash to track confirmation,
-      // and they can query get_lp_position afterwards to get updated shares.
-      return txHash as any;
-    });
-  }
-
-  async withdraw(
-    lp: string,
-    shares: bigint,
-    signerPublicKey: string
+    signerPublicKey: string,
   ): Promise<string> {
     const args = [
       new Address(lp).toScVal(),
-      nativeToScVal(shares, { type: 'u128' }),
+      nativeToScVal(usdcAmount, { type: "u128" }),
     ];
-    return this.writeContract('withdraw', args, signerPublicKey);
+    return this.writeContract("deposit", args, signerPublicKey);
   }
 
+  /**
+   * Withdraws liquidity shares from the pool.
+   * @param lp - The public key of the liquidity provider
+   * @param shares - Number of shares to withdraw
+   * @param signerPublicKey - The public key that must sign the transaction
+   * @returns The transaction hash
+   * @throws Error if simulation fails or transaction submission fails
+   */
+  async withdraw(
+    lp: string,
+    shares: bigint,
+    signerPublicKey: string,
+  ): Promise<string> {
+    const args = [
+      new Address(lp).toScVal(),
+      nativeToScVal(shares, { type: "u128" }),
+    ];
+    return this.writeContract("withdraw", args, signerPublicKey);
+  }
+
+  /**
+   * Funds an invoice from the pool liquidity.
+   * @param invoiceIdHex - The hexadecimal ID of the invoice to fund
+   * @param signerPublicKey - The public key that must sign the transaction
+   * @returns True if funding succeeded
+   * @throws Error if simulation fails or transaction submission fails
+   */
   async fundInvoice(
     invoiceIdHex: string,
-    signerPublicKey: string
+    signerPublicKey: string,
   ): Promise<boolean> {
-    const args = [xdr.ScVal.scvBytes(Buffer.from(invoiceIdHex, 'hex'))];
-    return this.writeContract('fund_invoice', args, signerPublicKey).then(() => true);
+    const args = [xdr.ScVal.scvBytes(Buffer.from(invoiceIdHex, "hex"))];
+    return this.writeContract("fund_invoice", args, signerPublicKey).then(
+      () => true,
+    );
   }
 
+  /**
+   * Records repayment received for a funded invoice.
+   * @param invoiceIdHex - The hexadecimal ID of the invoice
+   * @param amount - The repayment amount received (in stroops)
+   * @param signerPublicKey - The public key that must sign the transaction
+   * @returns True if repayment was recorded successfully
+   * @throws Error if simulation fails or transaction submission fails
+   */
   async receiveRepayment(
     invoiceIdHex: string,
     amount: bigint,
-    signerPublicKey: string
+    signerPublicKey: string,
   ): Promise<boolean> {
     const args = [
-      xdr.ScVal.scvBytes(Buffer.from(invoiceIdHex, 'hex')),
-      nativeToScVal(amount, { type: 'u128' }),
+      xdr.ScVal.scvBytes(Buffer.from(invoiceIdHex, "hex")),
+      nativeToScVal(amount, { type: "u128" }),
     ];
-    return this.writeContract('receive_repayment', args, signerPublicKey).then(() => true);
+    return this.writeContract("receive_repayment", args, signerPublicKey).then(
+      () => true,
+    );
   }
 
+  /**
+   * Applies an invoice default to the pool.
+   * Side effect: recovers any locked escrow funds and reduces total deposits by the
+   * funded amount, so the principal loss is shared across all LP shares.
+   *
+   * Normally invoked internally by `invoice_contract.trigger_default()`. It is exposed
+   * here for tooling and testing parity with `EscrowClient.handleDefault()`.
+   * @param invoiceIdHex - The hexadecimal ID of the defaulting invoice
+   * @param signerPublicKey - The public key that must sign the transaction
+   * @returns True if the default was handled successfully
+   * @throws Error if simulation fails or transaction submission fails
+   */
+  async handleDefault(
+    invoiceIdHex: string,
+    signerPublicKey: string,
+  ): Promise<boolean> {
+    const args = [xdr.ScVal.scvBytes(Buffer.from(invoiceIdHex, "hex"))];
+    return this.writeContract("handle_default", args, signerPublicKey).then(
+      () => true,
+    );
+  }
+
+  /**
+   * Retrieves pool statistics (read-only, no on-chain auth required).
+   * @param signerPublicKey - The public key for RPC account lookup
+   * @returns Pool statistics including TVL, utilization, and APY
+   * @throws Error if simulation fails
+   */
   async getStats(signerPublicKey: string): Promise<PoolStats> {
     const args: xdr.ScVal[] = [];
-    return this.readContract(
-      'get_stats',
-      args,
-      signerPublicKey,
-      (val) => parsePoolStats(scValToNative(val))
+    return this.readContract("get_stats", args, signerPublicKey, (val) =>
+      parsePoolStats(scValToNative(val)),
     );
   }
 
-  async getLPPosition(lp: string, signerPublicKey: string): Promise<LPPosition> {
+  /**
+   * Retrieves the current liquidity position for an LP address (read-only, no on-chain auth required).
+   * Returns a zero-value position if the LP has no shares — does not panic.
+   * @param lp - The public key of the liquidity provider
+   * @param signerPublicKey - The public key for RPC account lookup
+   * @returns The LP position including shares, USDC value, yield earned, and deposit count
+   * @throws Error if simulation fails or the return value cannot be parsed
+   */
+  async getLPPosition(
+    lp: string,
+    signerPublicKey: string,
+  ): Promise<LPPosition> {
     const args = [new Address(lp).toScVal()];
-    return this.readContract(
-      'get_lp_position',
-      args,
-      signerPublicKey,
-      (val) => parseLPPosition(scValToNative(val))
+    return this.readContract("get_lp_position", args, signerPublicKey, (val) =>
+      parseLPPosition(scValToNative(val)),
     );
   }
 
+  /**
+   * Gets the current pool utilization rate (read-only).
+   * @param signerPublicKey - The public key for RPC account lookup
+   * @returns Utilization rate in basis points, passed through exactly as the
+   * contract's `u32` reports it (`total_funded / total_deposits × 10_000`, so 5000
+   * is 50% and 10000 is 100%). Same unit as {@link getStats}'s
+   * `utilizationRateBps`; divide by 100 for a percentage. Returns 0 when the pool
+   * has no deposits.
+   * @throws Error if simulation fails
+   */
   async getUtilizationRate(signerPublicKey: string): Promise<number> {
     const args: xdr.ScVal[] = [];
     return this.readContract(
-      'get_utilization_rate',
+      "get_utilization_rate",
       args,
       signerPublicKey,
-      (val) => Number(scValToNative(val) || 0)
+      (val) => Number(scValToNative(val) || 0),
     );
   }
 }

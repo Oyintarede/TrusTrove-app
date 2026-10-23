@@ -6,13 +6,13 @@ This guide explains how to configure and deploy TrusTrove to the Stellar Mainnet
 
 The main difference between testnet and mainnet deployments is the network configuration:
 
-| Aspect | Testnet | Mainnet |
-|--------|---------|---------|
-| **Network Name** | `testnet` | `mainnet` |
-| **Horizon URL** | `https://horizon-testnet.stellar.org` | `https://horizon.stellar.org` |
-| **Soroban RPC URL** | `https://soroban-testnet.stellar.org` | `https://soroban.stellar.org` |
-| **Network Passphrase** | `Test SDF Network ; September 2015` | `Public Global Stellar Network ; September 2015` |
-| **USDC Issuer** | `GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5` | `GA5ZSEJYB37JRC5AVCIA5MOP4SHAHTQO62OJJVTIL7FWRVJRNRQWWIV` |
+| Aspect                 | Testnet                                                    | Mainnet                                                   |
+| ---------------------- | ---------------------------------------------------------- | --------------------------------------------------------- |
+| **Network Name**       | `testnet`                                                  | `mainnet`                                                 |
+| **Horizon URL**        | `https://horizon-testnet.stellar.org`                      | `https://horizon.stellar.org`                             |
+| **Soroban RPC URL**    | `https://soroban-testnet.stellar.org`                      | `https://soroban.stellar.org`                             |
+| **Network Passphrase** | `Test SDF Network ; September 2015`                        | `Public Global Stellar Network ; September 2015`          |
+| **USDC Issuer**        | `GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5` | `GA5ZSEJYB37JRC5AVCIA5MOP4SHAHTQO62OJJVTIL7FWRVJRNRQWWIV` |
 
 ---
 
@@ -87,7 +87,7 @@ JWT_SECRET=your-strong-random-secret-here
 JWT_EXPIRY_HOURS=24
 
 # Indexer API URL (exposed to frontend)
-NEXT_PUBLIC_INDEXER_API_URL=https://your-indexer-domain.com
+NEXT_PUBLIC_API_BASE_URL=https://your-indexer-domain.com
 
 # Database connection strings (Neon Postgres)
 DATABASE_URL=postgresql://user:pass@host/mainnet-db?sslmode=require
@@ -109,6 +109,7 @@ DATABASE_URL_UNPOOLED=postgresql://user:pass@host/mainnet-db?sslmode=require
 - **Documentation:** [Horizon API Reference](https://developers.stellar.org/docs/apis/horizon)
 
 Example Horizon requests:
+
 ```bash
 # Get account details
 curl https://horizon.stellar.org/accounts/GXXXXXXXXX
@@ -126,6 +127,7 @@ curl https://horizon.stellar.org/accounts/GXXXXXXXXX/transactions
 - **Documentation:** [Soroban RPC Reference](https://developers.stellar.org/docs/learn/networks/testnet#soroban-rpc)
 
 Example Soroban RPC requests:
+
 ```bash
 # Get Soroban instance (core-related data)
 curl -X POST https://soroban.stellar.org \
@@ -147,8 +149,6 @@ curl -X POST https://soroban.stellar.org \
     "params": ["<transaction_envelope>"]
   }'
 ```
-
-
 
 ---
 
@@ -194,10 +194,13 @@ The SDK automatically uses `NEXT_PUBLIC_NETWORK_PASSPHRASE` from the config:
 
 ```typescript
 // apps/web/lib/api.ts
-import { DEFAULT_NETWORK } from '@trusttrove/sdk';
+import { DEFAULT_NETWORK } from "@trusttrove/sdk";
 
 // Transactions are signed with the network passphrase
-const transaction = new Transaction(envelope, DEFAULT_NETWORK.networkPassphrase);
+const transaction = new Transaction(
+  envelope,
+  DEFAULT_NETWORK.networkPassphrase,
+);
 ```
 
 ---
@@ -215,6 +218,7 @@ const transaction = new Transaction(envelope, DEFAULT_NETWORK.networkPassphrase)
 ### Frontend Deployment (Vercel/hosting platform)
 
 1. Set environment variables in your hosting platform dashboard:
+
    ```
    NEXT_PUBLIC_STELLAR_NETWORK=mainnet
    NEXT_PUBLIC_HORIZON_URL=https://horizon.stellar.org
@@ -226,7 +230,7 @@ const transaction = new Transaction(envelope, DEFAULT_NETWORK.networkPassphrase)
    NEXT_PUBLIC_POOL_CONTRACT_ID=<your-contract-id>
    NEXT_PUBLIC_USDC_ISSUER=GA5ZSEJYB37JRC5AVCIA5MOP4SHAHTQO62OJJVTIL7FWRVJRNRQWWIV
    NEXT_PUBLIC_USDC_ASSET_CODE=USDC
-   NEXT_PUBLIC_INDEXER_API_URL=https://your-indexer-domain.com
+   NEXT_PUBLIC_API_BASE_URL=https://your-indexer-domain.com
    ```
 
 2. Deploy the frontend
@@ -234,6 +238,7 @@ const transaction = new Transaction(envelope, DEFAULT_NETWORK.networkPassphrase)
 ### Indexer/Backend Deployment (Render/hosting platform)
 
 1. Set environment variables in your hosting platform dashboard:
+
    ```
    API_PORT=8080
    INDEXER_POLL_INTERVAL_MS=5000
@@ -244,6 +249,7 @@ const transaction = new Transaction(envelope, DEFAULT_NETWORK.networkPassphrase)
    ```
 
 2. Run database migrations:
+
    ```bash
    # In indexer directory
    psql -h <your-db-host> -U <user> -d <database> -f db/migrations/001_initial.sql
@@ -271,17 +277,23 @@ const transaction = new Transaction(envelope, DEFAULT_NETWORK.networkPassphrase)
 2. Fund with minimum XLM for transaction fees (~1-2 XLM)
 3. Add USDC trustline:
    ```bash
-   stellar pay --testnet \
+   stellar tx new change-trust \
      --source-account <your-account> \
-     --destination <your-account> \
-     --asset-code USDC \
-     --asset-issuer GA5ZSEJYB37JRC5AVCIA5MOP4SHAHTQO62OJJVTIL7FWRVJRNRQWWIV \
-     --amount 0
+     --line USDC:GA5ZSEJYB37JRC5AVCIA5MOP4SHAHTQO62OJJVTIL7FWRVJRNRQWWIV \
+     --rpc-url https://soroban.stellar.org \
+     --network-passphrase "Public Global Stellar Network ; September 2015"
    ```
+
+`stellar tx new change-trust` is the current CLI subcommand for trustlines;
+`stellar pay` no longer exists, and a payment cannot open a trustline. The
+`--rpc-url` and `--network-passphrase` pair pins the transaction to Mainnet,
+matching the network table above. Omit `--limit`: its default (the maximum
+asset amount) is the usable trustline, while `--limit 0` removes one.
 
 ### Transaction Verification
 
 1. Use Horizon to verify transactions:
+
    ```bash
    curl https://horizon.stellar.org/transactions/<tx-hash>
    ```
@@ -300,6 +312,7 @@ const transaction = new Transaction(envelope, DEFAULT_NETWORK.networkPassphrase)
 **Cause:** Network passphrase mismatch between environment config and Freighter
 
 **Solution:**
+
 - Verify `NEXT_PUBLIC_NETWORK_PASSPHRASE` is exactly: `Public Global Stellar Network ; September 2015`
 - Ensure Freighter is switched to "Stellar Mainnet"
 - Clear browser cache and restart
@@ -309,6 +322,7 @@ const transaction = new Transaction(envelope, DEFAULT_NETWORK.networkPassphrase)
 **Cause:** Contract ID doesn't exist on mainnet or is incorrect
 
 **Solution:**
+
 - Verify contract ID starts with `C` and is 56 characters
 - Check contract was deployed to mainnet (not testnet)
 - Use Stellar Expert to verify contract exists: `https://stellar.expert/explorer/public/contract/<contract-id>`
@@ -318,6 +332,7 @@ const transaction = new Transaction(envelope, DEFAULT_NETWORK.networkPassphrase)
 **Cause:** Exceeding Soroban RPC rate limits
 
 **Solution:**
+
 - Increase `INDEXER_POLL_INTERVAL_MS` to 10000 (10 seconds)
 - Implement transaction queuing in indexer
 - Consider setting up a private Soroban RPC endpoint
@@ -327,6 +342,7 @@ const transaction = new Transaction(envelope, DEFAULT_NETWORK.networkPassphrase)
 **Cause:** Incorrect `DATABASE_URL` or network connectivity issues
 
 **Solution:**
+
 - Verify database credentials and host are correct
 - Check database is accessible from deployment environment
 - Ensure SSL mode is enabled (`sslmode=require`)
@@ -364,4 +380,3 @@ NEXT_PUBLIC_SOROBAN_RPC_URL=https://soroban.stellar.org
 NEXT_PUBLIC_NETWORK_PASSPHRASE="Public Global Stellar Network ; September 2015"
 NEXT_PUBLIC_USDC_ISSUER=GA5ZSEJYB37JRC5AVCIA5MOP4SHAHTQO62OJJVTIL7FWRVJRNRQWWIV
 ```
-

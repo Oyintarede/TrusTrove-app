@@ -1,6 +1,7 @@
 # Dependency directories
 node_modules/
 /jspm_packages/
+.tools/
 
 # Build outputs
 **/dist/
@@ -16,6 +17,10 @@ indexer/indexer.exe
 *.wasm
 *.exe
 
+# Test coverage output
+coverage/
+*.out
+
 # Debug logs
 npm-debug.log*
 yarn-debug.log*
@@ -28,6 +33,9 @@ pnpm-debug.log*
 .env.development.local
 .env.test.local
 .env.production.local
+
+# Docker Compose stack (create from .env.docker.example)
+.env.docker
 
 # IDEs and OS files
 .idea/
