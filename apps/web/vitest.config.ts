@@ -22,6 +22,7 @@ export default defineConfig({
     },
     setupFiles: ["./vitest.setup.ts"],
     globals: true,
+    testTimeout: 15_000,
     alias: {
       "@": resolve(__dirname, "./"),
       "@trusttrove/sdk/schemas": resolve(

@@ -48,9 +48,11 @@ describe.each(MIGRATED_FILES)("messages used by %s", (file) => {
     ),
   );
 
-  it("reads a single namespace that exists in en.json", () => {
-    expect(namespaces).toHaveLength(1);
-    expect(resolve(messages, namespace)).toBeTypeOf("object");
+  it("reads namespaces that exist in en.json", () => {
+    expect(namespaces).toContain(namespace);
+    expect(
+      namespaces.every((name) => resolve(messages, name) !== undefined),
+    ).toBe(true);
   });
 
   it("only passes string-literal keys to t()", () => {

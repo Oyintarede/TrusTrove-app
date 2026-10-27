@@ -10,7 +10,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { ZodError } from "zod";
+import { z, ZodError } from "zod";
 import {
   parsePoolStats,
   parseProfile,
@@ -525,5 +525,51 @@ describe("normalize/toCamelCase (through the exported parsers)", () => {
       depositCount: 0,
     });
     expect(() => parseProfile("nope")).toThrow(ZodError);
+  });
+});
+
+describe("bounded Zod collection parsing", () => {
+  it("rejects oversized arrays before parsing their elements", () => {
+    let parsedElements = 0;
+    const schema = z
+      .array(
+        z.string().refine(() => {
+          parsedElements += 1;
+          return false;
+        }),
+      )
+      .max(1);
+
+    const result = schema.safeParse(["first", "second"]);
+
+    expect(result.success).toBe(false);
+    expect(parsedElements).toBe(0);
+    if (!result.success) {
+      expect(result.error.issues.map((issue) => issue.code)).toEqual([
+        "too_big",
+      ]);
+    }
+  });
+
+  it("rejects oversized sets before parsing their elements", () => {
+    let parsedElements = 0;
+    const schema = z
+      .set(
+        z.string().refine(() => {
+          parsedElements += 1;
+          return false;
+        }),
+      )
+      .max(1);
+
+    const result = schema.safeParse(new Set(["first", "second"]));
+
+    expect(result.success).toBe(false);
+    expect(parsedElements).toBe(0);
+    if (!result.success) {
+      expect(result.error.issues.map((issue) => issue.code)).toEqual([
+        "too_big",
+      ]);
+    }
   });
 });
