@@ -15,7 +15,6 @@ overrides:
   toml: '>=5.0.1 <6'
   dompurify: '>=3.4.17 <4'
   axios: '>=1.20.0 <2'
-  dompurify: '>=3.4.17 <4'
   follow-redirects: '>=1.16.1 <2'
   source-map-js: '>=1.2.2 <2'
   vite: '>=8.1.6 <9'
@@ -4104,7 +4103,6 @@ snapshots:
 
   '@img/colour@1.1.0':
     optional: true
-  '@img/colour@1.1.0': {}
 
   '@img/sharp-darwin-arm64@0.35.5':
     optionalDependencies:
